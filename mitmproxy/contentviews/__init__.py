@@ -19,6 +19,7 @@ from typing import List  # noqa
 from typing import Tuple  # noqa
 
 from mitmproxy import exceptions
+from mitmproxy.enum import FlowType
 from mitmproxy.net import http
 from mitmproxy.utils import strutils
 from . import (
@@ -92,10 +93,15 @@ def safe_to_print(lines, encoding="utf8"):
         yield clean_line
 
 
-def get_message_content_view(viewname, message):
+def get_message_content_view(viewname, message, flowtype):
     """
     Like get_content_view, but also handles message encoding.
     """
+    _message = message
+    if flowtype is FlowType.Request:
+        message = message.request
+    else:
+        message = message.response
     viewmode = get(viewname)
     if not viewmode:
         viewmode = get("auto")
@@ -116,6 +122,8 @@ def get_message_content_view(viewname, message):
         return "", iter([[("error", "content missing")]]), None
 
     metadata = {}
+    metadata["request"] = _message.request
+    metadata["response"] = _message.response
     if isinstance(message, http.Request):
         metadata["query"] = message.query
     if isinstance(message, http.Message):

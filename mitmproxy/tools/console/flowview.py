@@ -7,6 +7,7 @@ import urwid
 
 from mitmproxy import contentviews
 from mitmproxy import http
+from mitmproxy.enum import FlowType
 from mitmproxy.tools.console import common
 from mitmproxy.tools.console import flowdetailview
 from mitmproxy.tools.console import searchable
@@ -156,15 +157,20 @@ class FlowDetails(tabs.Tabs):
         return "Detail"
 
     def view_request(self):
-        return self.conn_text(self.flow.request)
+        return self.conn_text(self.flow, FlowType.Request)
 
     def view_response(self):
-        return self.conn_text(self.flow.response)
+        return self.conn_text(self.flow, FlowType.Response)
 
     def view_details(self):
         return flowdetailview.flowdetails(self.view, self.flow)
 
-    def content_view(self, viewmode, message):
+    def content_view(self, viewmode, message, flowtype):
+        _message = message
+        if flowtype is FlowType.Request:
+            message = message.request
+        else:
+            message = message.response
         if message.raw_content is None:
             msg, body = "", [urwid.Text([("error", "[content missing]")])]
             return msg, body
@@ -181,15 +187,20 @@ class FlowDetails(tabs.Tabs):
                 getattr(message, "path", None),
             ))
             # we need to pass the message off-band because it's not hashable
-            self._get_content_view_message = message
-            return self._get_content_view(viewmode, limit, flow_modify_cache_invalidation)
+            self._get_content_view_message = _message
+            return self._get_content_view(viewmode, limit, flow_modify_cache_invalidation, flowtype)
 
     @lru_cache(maxsize=200)
-    def _get_content_view(self, viewmode, max_lines, _):
+    def _get_content_view(self, viewmode, max_lines, flowtype, _):
         message = self._get_content_view_message
         self._get_content_view_message = None
+        _message = message
+        if flowtype is FlowType.Request:
+            message = message.request
+        else:
+            message = message.response
         description, lines, error = contentviews.get_message_content_view(
-            viewmode, message
+            viewmode, _message, flowtype
         )
         if error:
             signals.add_log(error, "error")
@@ -226,7 +237,12 @@ class FlowDetails(tabs.Tabs):
 
         return description, text_objects
 
-    def conn_text(self, conn):
+    def conn_text(self, conn, flowtype):
+        _conn = conn
+        if flowtype is FlowType.Request:
+            conn = conn.request
+        else:
+            conn = conn.response
         if conn:
             txt = common.format_keyvals(
                 [(h + ":", v) for (h, v) in conn.headers.items(multi=True)],
@@ -234,7 +250,7 @@ class FlowDetails(tabs.Tabs):
                 val = "text"
             )
             viewmode = self.master.commands.call("console.flowview.mode")
-            msg, body = self.content_view(viewmode, conn)
+            msg, body = self.content_view(viewmode, _conn, flowtype)
 
             cols = [
                 urwid.Text(
